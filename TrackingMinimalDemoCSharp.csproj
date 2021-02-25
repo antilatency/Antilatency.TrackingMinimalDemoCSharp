@@ -3,27 +3,22 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <Platforms>AnyCPU;x64</Platforms>
+    <Platforms>x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="BinaryDependencies\**" />
-    <Compile Remove="Dependencies\**" />
-    <Compile Remove="ProjectApi\**" />
-    <EmbeddedResource Remove="BinaryDependencies\**" />
-    <EmbeddedResource Remove="Dependencies\**" />
-    <EmbeddedResource Remove="ProjectApi\**" />
-    <None Remove="BinaryDependencies\**" />
-    <None Remove="Dependencies\**" />
-    <None Remove="ProjectApi\**" />
+    <Compile Remove="AntilatencySdk\**" />
+    <None Remove="AntilatencySdk\**" />
+    <AntilatencySdkApiFiles Include="AntilatencySdk\Api\*.cs" />
+    <AntilatencySdkDlls Include="AntilatencySdk\Bin\Windows\x64\*.dll" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Remove="GenerateProjectAPI.ps1" />
+    <Compile Include="@(AntilatencySdkApiFiles)" />
   </ItemGroup>
 
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="xcopy /Y &quot;$(ProjectDir)BinaryDependencies\AntilatencyDeviceNetwork\AntilatencyDeviceNetwork.dll&quot; &quot;$(TargetDir)&quot;&#xD;&#xA;xcopy /Y &quot;$(ProjectDir)BinaryDependencies\AntilatencyStorageClient\AntilatencyStorageClient.dll&quot; &quot;$(TargetDir)&quot;&#xD;&#xA;xcopy /Y &quot;$(ProjectDir)BinaryDependencies\AntilatencyAltTracking\AntilatencyAltTracking.dll&quot; &quot;$(TargetDir)&quot;" />
+  <Target Name="CopyCustomContent" AfterTargets="AfterBuild">
+    <Copy SourceFiles="@(AntilatencySdkDlls)" DestinationFolder="$(OutDir)" />
   </Target>
 
 </Project>
