@@ -21,191 +21,187 @@
 using System;
 using System.Threading;
 
-using Antilatency;
-using Antilatency.DeviceNetwork;
-using Antilatency.Alt.Tracking;
-using Antilatency.StorageClient;
-
 class Program {
-    static void Main(string[] args) {
-        var trackignExample = new AltTrackingExample();
-        while (true) {
-            var node = trackignExample.WaitForNode();
-            trackignExample.RunTrackingTask(node);
-        }
+    static void Main() {
+        new AltTrackingExample().Run();
     }
 }
 
 class AltTrackingExample {
+
     private Antilatency.DeviceNetwork.ILibrary _adnLibrary;
-    private Antilatency.DeviceNetwork.INetwork _deviceNetwork;
-
-    private Antilatency.Alt.Tracking.ILibrary _altTrackingLibrary;
-    private Antilatency.Alt.Tracking.ITrackingCotask _trackingCotask;
-    private Antilatency.Alt.Tracking.IEnvironment _environment;
-    private Antilatency.Math.floatP3Q _placement;
-
-    private Antilatency.StorageClient.ILibrary _antilatencyStorageClientLibrary;
+    private Antilatency.StorageClient.ILibrary _storageClientLibrary;
+    private Antilatency.Alt.Tracking.ILibrary _trackingLibrary;
 
     public AltTrackingExample() {
-        //Load libraries.
-        _adnLibrary = Antilatency.DeviceNetwork.Library.load();
-        _antilatencyStorageClientLibrary = Antilatency.StorageClient.Library.load();
-        _altTrackingLibrary = Antilatency.Alt.Tracking.Library.load();
+        LoadLibraries();
+    }
 
+    ~AltTrackingExample() {
+        Antilatency.Utils.SafeDispose(ref _trackingLibrary);
+        Antilatency.Utils.SafeDispose(ref _storageClientLibrary);
+        Antilatency.Utils.SafeDispose(ref _adnLibrary);
+    }
+
+    private void LoadLibraries() {
+
+        _adnLibrary = Antilatency.DeviceNetwork.Library.load();
         if (_adnLibrary == null) {
             throw new Exception("Failed to load AntilatencyDeviceNetwork library");
         }
 
-        if (_antilatencyStorageClientLibrary == null) {
+        Console.WriteLine("Antilatency Device Network version: " + _adnLibrary.getVersion());
+
+        _adnLibrary.setLogLevel(Antilatency.DeviceNetwork.LogLevel.Info);
+
+        _storageClientLibrary = Antilatency.StorageClient.Library.load();
+        if (_storageClientLibrary == null) {
             throw new Exception("Failed to load AntilatencyStorageClient library");
         }
 
-        if (_altTrackingLibrary == null) {
+        _trackingLibrary = Antilatency.Alt.Tracking.Library.load();
+        if (_trackingLibrary == null) {
             throw new Exception("Failed to load AntilatencyAltTracking library");
         }
+    }
 
-        //Set log verbosity level for Antilatency Device Network library.
-        _adnLibrary.setLogLevel(LogLevel.Info);
+    public void Run() {
 
-        Console.WriteLine("Antilatency Device Network version: " + _adnLibrary.getVersion());
+        using var network = CreateNetwork();
 
-        //Create Antilatency Device Network.
-        _deviceNetwork = _adnLibrary.createNetwork(new[] { new UsbDeviceType { vid = UsbVendorId.Antilatency, pid = 0x0000 } });
+        Console.WriteLine("----- Tracking will be run with the following parameters -----");
+        GetSettings(out string environmentCode, out string placementCode);
+        using var environment = CreateEnvironment(environmentCode);
+        var placement = CreatePlacement(placementCode);
 
-        //Read default environment code from AntilatencyService.
-        var environmentCode = _antilatencyStorageClientLibrary.getLocalStorage().read("environment", "default");
+        PrintEnvironmentMarkers(environment);
+        PrintPlacementInfo(placement);
 
-        //Read default placement code from AntilatencyService.
-        var placementCode = _antilatencyStorageClientLibrary.getLocalStorage().read("placement", "default");
+        while (true) {
+            Console.WriteLine("----- Waiting for a tracking node -----");
+            using var cotask = StartTrackingOnAnyNode(network, environment);
+            PrintTrackingState(cotask, placement);
+        }
+    }
 
-        //Create placement using code received from storage.
-        _placement = new Antilatency.Math.floatP3Q();
+    private Antilatency.DeviceNetwork.INetwork CreateNetwork() {
+        return _adnLibrary.createNetwork(
+            new[] {
+                new Antilatency.DeviceNetwork.UsbDeviceType {
+                    vid = Antilatency.DeviceNetwork.UsbVendorId.Antilatency,
+                    pid = 0x0000
+                }
+            }
+        );
+    }
+
+    private void GetSettings(out string environmentCode, out string placementCode) {
+        
+        using var storage = _storageClientLibrary.getLocalStorage();
+        environmentCode = storage.read("environment", "default");
+        placementCode = storage.read("placement", "default");
+    }
+
+    private Antilatency.Alt.Tracking.IEnvironment CreateEnvironment(string environmentCode) {
+
+        if (string.IsNullOrEmpty(environmentCode)) {
+            throw new Exception("Cannot create environment");
+        }
+
+        return _trackingLibrary.createEnvironment(environmentCode);
+    }
+
+    public Antilatency.Math.floatP3Q CreatePlacement(string placementCode) {
+        
         if (string.IsNullOrEmpty(placementCode)) {
+            var identityPlacement = new Antilatency.Math.floatP3Q();
+            identityPlacement.rotation.w = 1;
+
             Console.WriteLine("Failed to get placement code, using identity placement");
-            _placement.position.x = 0;
-            _placement.position.y = 0;
-            _placement.position.z = 0;
-
-            _placement.rotation.x = 0;
-            _placement.rotation.y = 0;
-            _placement.rotation.z = 0;
-            _placement.rotation.w = 1;
-        } else {
-            _placement = _altTrackingLibrary.createPlacement(placementCode);
+            return identityPlacement;
         }
 
-        Console.WriteLine(
-                string.Format("Placement offset: {0}, {1}, {2}, rotation: {3}, {4}, {5}, {6}",
-                _placement.position.x, _placement.position.y, _placement.position.z,
-                _placement.rotation.x, _placement.rotation.y, _placement.rotation.z, _placement.rotation.w
-                )
-            );
-
-        //Create environment using code received from storage.
-        _environment = _altTrackingLibrary.createEnvironment(environmentCode);
-
-        //Get all tracking markers from environment. For flexible environments markers position will be initialized with some default values
-        //and then tracking will correct positions to match markers as close as possible to real positions.
-        var markers = _environment.getMarkers();
-        for (var i = 0; i < markers.Length; ++i) {
-            Console.WriteLine(string.Format("Environment marker position: ({0}, {1}, {2})", markers[i].x, markers[i].y, markers[i].z));
-        }
+        return _trackingLibrary.createPlacement(placementCode);
     }
 
-    /// <summary>
-    /// Checks if any idle tracking node exists.
-    /// </summary>
-    /// <returns>First idle tracking node.</returns>
-    public Antilatency.DeviceNetwork.NodeHandle WaitForNode() {
-        Console.WriteLine("Waiting for tracking node...");
+    private Antilatency.Alt.Tracking.ITrackingCotask StartTrackingOnAnyNode(
+            Antilatency.DeviceNetwork.INetwork network,
+            Antilatency.Alt.Tracking.IEnvironment environment) {
 
-        var node = new NodeHandle();
-        var networkUpdateId = 0u;
-        do {
-            //Every time any node is connected, disconnected or node status is changed, network update id is incremented.
-            var updateId = _deviceNetwork.getUpdateId();
-            if (networkUpdateId != updateId) {
-                networkUpdateId = updateId;
+        using var trackingLibrary = Antilatency.Alt.Tracking.Library.load();
 
-                Console.WriteLine("Network update id has been incremented, searching for available tracking node...");
+        using var cotaskConstructor = trackingLibrary.createTrackingCotaskConstructor();
 
-                node = GetTrackingNode();
+        uint prevUpdateId = 0;
+        while (true) {
+            uint updateId = network.getUpdateId();
+            if (updateId == prevUpdateId) {
+                Thread.Yield();
+                continue;
+            }
 
-                if (node == Antilatency.DeviceNetwork.NodeHandle.Null) {
-                    Console.WriteLine("Tracking node not found.");
+            Console.WriteLine($"Network ID changed: {prevUpdateId} -> {updateId}");
+
+            var nodes = cotaskConstructor.findSupportedNodes(network);
+            foreach (var n in nodes) {
+                if (network.nodeGetStatus(n) == Antilatency.DeviceNetwork.NodeStatus.Idle) {
+
+                    string serialNo = network.nodeGetStringProperty(n,
+                        Antilatency.DeviceNetwork.Interop.Constants.HardwareSerialNumberKey);
+
+                    Console.WriteLine($"Tracking is about to start on node {n}, s/n {serialNo}");
+
+                    return cotaskConstructor.startTask(network, n, environment);
                 }
             }
-        } while (node == Antilatency.DeviceNetwork.NodeHandle.Null);
 
-        Console.WriteLine("Tracking node found, serial number: " + _deviceNetwork.nodeGetStringProperty(node, Antilatency.DeviceNetwork.Interop.Constants.HardwareSerialNumberKey));
-
-        return node;
-    }
-
-    /// <summary>
-    /// Returns the first idle alt tracker node just for demonstration purposes.
-    /// </summary>
-    private Antilatency.DeviceNetwork.NodeHandle GetTrackingNode() {
-        var result = new NodeHandle();
-
-        using (var trackingConstructor = _altTrackingLibrary.createTrackingCotaskConstructor()) {
-            //Get all nodes that support tracking task.
-            var nodes = trackingConstructor.findSupportedNodes(_deviceNetwork);
-            foreach (var node in nodes) {
-                //If node status is idle (no task currently running) then we can start tracking task on this node.
-                if (_deviceNetwork.nodeGetStatus(node) == NodeStatus.Idle) {
-                    result = node;
-                    break;
-                }
-            }
-            return result;
+            prevUpdateId = updateId;
         }
     }
 
-    /// <summary>
-    /// Start tracking task on node and print tracking data while node is connected and task has not been stopped.
-    /// </summary>
-    /// <param name="node">Node to start tracking on.</param>
-    public void RunTrackingTask(Antilatency.DeviceNetwork.NodeHandle node) {
-        //Create tracking cotask (run tracking on node).
-        _trackingCotask = _altTrackingLibrary.createTrackingCotaskConstructor().startTask(_deviceNetwork, node, _environment);
+    private void PrintTrackingState(
+            Antilatency.Alt.Tracking.ITrackingCotask cotask,
+            Antilatency.Math.floatP3Q placement) {
 
-        while (!_trackingCotask.isTaskFinished()) {
-            //Get raw tracker state without extrapolation and placement correction
-            var rawState = _trackingCotask.getState(Antilatency.Alt.Tracking.Constants.DefaultAngularVelocityAvgTime);
-            Console.WriteLine(string.Format("Raw tracker position: ({0}, {1}, {2})", rawState.pose.position.x, rawState.pose.position.y, rawState.pose.position.z));
+        while (!cotask.isTaskFinished()) {
 
-            //Get extrapolated tracker state with placement correction
-            var extrapolatedState = _trackingCotask.getExtrapolatedState(_placement, 0.06f);
-            Console.WriteLine(string.Format("Extrapolated tracker position: ({0}, {1}, {2})", extrapolatedState.pose.position.x, extrapolatedState.pose.position.y, extrapolatedState.pose.position.z));
+            var state = cotask.getExtrapolatedState(placement, 0.06f);
 
-            //Get current tracking stability stage
-            Console.WriteLine("Current tracking stage: " + extrapolatedState.stability.stage);
+            Console.WriteLine(
+                "{0,-26} : {1,-12:G5} {2,-12:G5} {3,-12:G5} : " +
+                "{4,-12:G5} {5,-12:G5} {6,-12:G5} {7:G5}",
+                state.stability.stage,
+                state.pose.position.x,
+                state.pose.position.y,
+                state.pose.position.z,
+                state.pose.rotation.x,
+                state.pose.rotation.y,
+                state.pose.rotation.z,
+                state.pose.rotation.w);
 
-            //5 FPS pose printing
+            // Do not print too often; 5 FPS is enough.
             Thread.Sleep(200);
         }
-
-        StopTracking();
     }
 
-    /// <summary>
-    /// Stop tracking task.
-    /// </summary>
-    private void StopTracking() {
-        Antilatency.Utils.SafeDispose(ref _trackingCotask);
+    private void PrintEnvironmentMarkers(Antilatency.Alt.Tracking.IEnvironment environment) {
+        var markers = environment.getMarkers();
+
+        Console.WriteLine("Environment markers:");
+        for (var i = 0; i < markers.Length; ++i) {
+            Console.WriteLine("    marker {0,-15} : {1,-12:G5} {2,-12:G5} {3,-12:G5}",
+                i, markers[i].x, markers[i].y, markers[i].z);
+        }
+
+        Console.WriteLine();
     }
 
-    /// <summary>
-    /// Cleanup at object destroy.
-    /// </summary>
-    ~AltTrackingExample() {
-        StopTracking();
-
-        Antilatency.Utils.SafeDispose(ref _altTrackingLibrary);
-        Antilatency.Utils.SafeDispose(ref _antilatencyStorageClientLibrary);
-        Antilatency.Utils.SafeDispose(ref _deviceNetwork);
-        Antilatency.Utils.SafeDispose(ref _adnLibrary);
+    private void PrintPlacementInfo(Antilatency.Math.floatP3Q placement) {
+        Console.WriteLine("Placement:");
+        Console.WriteLine("    offset: {0:G5} {1:G5} {2:G5}",
+            placement.position.x, placement.position.y, placement.position.z);
+        Console.WriteLine("    rotation: {0:G5} {1:G5} {2:G5} {3:G5}",
+            placement.rotation.x, placement.rotation.y, placement.rotation.z, placement.rotation.w);
+        Console.WriteLine();
     }
 }
