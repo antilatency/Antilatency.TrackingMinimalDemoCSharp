@@ -19,6 +19,7 @@
 // SOFTWARE.
 
 using System;
+using System.Linq;
 using System.Threading;
 
 class Program {
@@ -50,7 +51,8 @@ class AltTrackingExample {
             throw new Exception("Failed to load AntilatencyDeviceNetwork library");
         }
 
-        Console.WriteLine("Antilatency Device Network version: " + _adnLibrary.getVersion());
+        Console.WriteLine(
+            $"AntilatencyDeviceNetwork version: {_adnLibrary.getVersion()}");
 
         _adnLibrary.setLogLevel(Antilatency.DeviceNetwork.LogLevel.Info);
 
@@ -69,7 +71,7 @@ class AltTrackingExample {
 
         using var network = CreateNetwork();
 
-        Console.WriteLine("----- Tracking will be run with the following parameters -----");
+        Console.WriteLine("----- Settings -----");
         GetSettings(out string environmentCode, out string placementCode);
         using var environment = CreateEnvironment(environmentCode);
         var placement = CreatePlacement(placementCode);
@@ -102,7 +104,8 @@ class AltTrackingExample {
         placementCode = storage.read("placement", "default");
     }
 
-    private Antilatency.Alt.Tracking.IEnvironment CreateEnvironment(string environmentCode) {
+    private Antilatency.Alt.Tracking.IEnvironment CreateEnvironment(
+                                                    string environmentCode) {
 
         if (string.IsNullOrEmpty(environmentCode)) {
             throw new Exception("Cannot create environment");
@@ -142,17 +145,20 @@ class AltTrackingExample {
 
             Console.WriteLine($"Network ID changed: {prevUpdateId} -> {updateId}");
 
-            var nodes = cotaskConstructor.findSupportedNodes(network);
-            foreach (var n in nodes) {
-                if (network.nodeGetStatus(n) == Antilatency.DeviceNetwork.NodeStatus.Idle) {
+            var node = cotaskConstructor
+                .findSupportedNodes(network)
+                .FirstOrDefault(
+                    n => network.nodeGetStatus(n) ==
+                        Antilatency.DeviceNetwork.NodeStatus.Idle);
 
-                    string serialNo = network.nodeGetStringProperty(n,
-                        Antilatency.DeviceNetwork.Interop.Constants.HardwareSerialNumberKey);
+            if (node != Antilatency.DeviceNetwork.NodeHandle.Null) {
 
-                    Console.WriteLine($"Tracking is about to start on node {n}, s/n {serialNo}");
+                string serialNo = network.nodeGetStringProperty(node,
+                    Antilatency.DeviceNetwork.Interop.Constants.HardwareSerialNumberKey);
 
-                    return cotaskConstructor.startTask(network, n, environment);
-                }
+                Console.WriteLine($"Tracking is about to start on node {node}, s/n {serialNo}");
+
+                return cotaskConstructor.startTask(network, node, environment);
             }
 
             prevUpdateId = updateId;
@@ -184,7 +190,9 @@ class AltTrackingExample {
         }
     }
 
-    private void PrintEnvironmentMarkers(Antilatency.Alt.Tracking.IEnvironment environment) {
+    private void PrintEnvironmentMarkers(
+            Antilatency.Alt.Tracking.IEnvironment environment) {
+
         var markers = environment.getMarkers();
 
         Console.WriteLine("Environment markers:");
@@ -199,9 +207,16 @@ class AltTrackingExample {
     private void PrintPlacementInfo(Antilatency.Math.floatP3Q placement) {
         Console.WriteLine("Placement:");
         Console.WriteLine("    offset: {0:G5} {1:G5} {2:G5}",
-            placement.position.x, placement.position.y, placement.position.z);
+            placement.position.x,
+            placement.position.y,
+            placement.position.z);
+
         Console.WriteLine("    rotation: {0:G5} {1:G5} {2:G5} {3:G5}",
-            placement.rotation.x, placement.rotation.y, placement.rotation.z, placement.rotation.w);
+            placement.rotation.x,
+            placement.rotation.y,
+            placement.rotation.z,
+            placement.rotation.w);
+
         Console.WriteLine();
     }
 }
