@@ -30,41 +30,17 @@ class Program {
 
 class AltTrackingExample {
 
-    private Antilatency.DeviceNetwork.ILibrary _adnLibrary;
-    private Antilatency.StorageClient.ILibrary _storageClientLibrary;
     private Antilatency.Alt.Tracking.ILibrary _trackingLibrary;
 
     public AltTrackingExample() {
-        LoadLibraries();
-    }
-
-    ~AltTrackingExample() {
-        Antilatency.Utils.SafeDispose(ref _trackingLibrary);
-        Antilatency.Utils.SafeDispose(ref _storageClientLibrary);
-        Antilatency.Utils.SafeDispose(ref _adnLibrary);
-    }
-
-    private void LoadLibraries() {
-
-        _adnLibrary = Antilatency.DeviceNetwork.Library.load();
-        if (_adnLibrary == null) {
-            throw new Exception("Failed to load AntilatencyDeviceNetwork library");
-        }
-
-        Console.WriteLine(
-            $"AntilatencyDeviceNetwork version: {_adnLibrary.getVersion()}");
-
-        _adnLibrary.setLogLevel(Antilatency.DeviceNetwork.LogLevel.Info);
-
-        _storageClientLibrary = Antilatency.StorageClient.Library.load();
-        if (_storageClientLibrary == null) {
-            throw new Exception("Failed to load AntilatencyStorageClient library");
-        }
-
         _trackingLibrary = Antilatency.Alt.Tracking.Library.load();
         if (_trackingLibrary == null) {
             throw new Exception("Failed to load AntilatencyAltTracking library");
         }
+    }
+
+    ~AltTrackingExample() {
+        Antilatency.Utils.SafeDispose(ref _trackingLibrary);
     }
 
     public void Run() {
@@ -87,7 +63,17 @@ class AltTrackingExample {
     }
 
     private Antilatency.DeviceNetwork.INetwork CreateNetwork() {
-        return _adnLibrary.createNetwork(
+        using var adnLibrary = Antilatency.DeviceNetwork.Library.load();
+        if (adnLibrary == null) {
+            throw new Exception("Failed to load AntilatencyDeviceNetwork library");
+        }
+
+        Console.WriteLine(
+            $"AntilatencyDeviceNetwork version: {adnLibrary.getVersion()}");
+
+        adnLibrary.setLogLevel(Antilatency.DeviceNetwork.LogLevel.Info);
+
+        return adnLibrary.createNetwork(
             new[] {
                 new Antilatency.DeviceNetwork.UsbDeviceType {
                     vid = Antilatency.DeviceNetwork.UsbVendorId.Antilatency,
@@ -98,8 +84,13 @@ class AltTrackingExample {
     }
 
     private void GetSettings(out string environmentCode, out string placementCode) {
-        
-        using var storage = _storageClientLibrary.getLocalStorage();
+
+        using var storageClientLibrary = Antilatency.StorageClient.Library.load();
+        if (storageClientLibrary == null) {
+            throw new Exception("Failed to load AntilatencyStorageClient library");
+        }
+
+        using var storage = storageClientLibrary.getLocalStorage();
         environmentCode = storage.read("environment", "default");
         placementCode = storage.read("placement", "default");
     }
