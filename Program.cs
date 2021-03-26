@@ -23,46 +23,38 @@ using System.Linq;
 using System.Threading;
 
 class Program {
+
     static void Main() {
-        new AltTrackingExample().Run();
-    }
-}
 
-class AltTrackingExample {
-
-    private Antilatency.Alt.Tracking.ILibrary _trackingLibrary;
-
-    public AltTrackingExample() {
-        _trackingLibrary = Antilatency.Alt.Tracking.Library.load();
-        if (_trackingLibrary == null) {
-            throw new Exception("Failed to load AntilatencyAltTracking library");
-        }
-    }
-
-    ~AltTrackingExample() {
-        Antilatency.Utils.SafeDispose(ref _trackingLibrary);
-    }
-
-    public void Run() {
-
+        using var storageClientLibrary = Antilatency.StorageClient.Library.load();
+        using var trackingLibrary = Antilatency.Alt.Tracking.Library.load();
         using var network = CreateNetwork();
 
-        Console.WriteLine("----- Settings -----");
-        GetSettings(out string environmentCode, out string placementCode);
-        using var environment = CreateEnvironment(environmentCode);
-        var placement = CreatePlacement(placementCode);
+        using var cotaskConstructor = trackingLibrary.createTrackingCotaskConstructor();
 
+        using var environment = CreateEnvironment(storageClientLibrary, trackingLibrary);
+        var placement = CreatePlacement(storageClientLibrary, trackingLibrary);
+
+        Console.WriteLine("----- Settings -----");
         PrintEnvironmentMarkers(environment);
         PrintPlacementInfo(placement);
 
         while (true) {
             Console.WriteLine("----- Waiting for a tracking node -----");
-            using var cotask = StartTrackingOnAnyNode(network, environment);
+
+            var node = WaitForCompatibleNode(cotaskConstructor, network);
+
+            string serialNo = network.nodeGetStringProperty(node,
+                    Antilatency.DeviceNetwork.Interop.Constants.HardwareSerialNumberKey);
+
+            Console.WriteLine($"Tracking is about to start on node {node}, s/n {serialNo}");
+
+            using var cotask = cotaskConstructor.startTask(network, node, environment);
             PrintTrackingState(cotask, placement);
         }
     }
 
-    private Antilatency.DeviceNetwork.INetwork CreateNetwork() {
+    private static Antilatency.DeviceNetwork.INetwork CreateNetwork() {
         using var adnLibrary = Antilatency.DeviceNetwork.Library.load();
         if (adnLibrary == null) {
             throw new Exception("Failed to load AntilatencyDeviceNetwork library");
@@ -83,30 +75,27 @@ class AltTrackingExample {
         );
     }
 
-    private void GetSettings(out string environmentCode, out string placementCode) {
-
-        using var storageClientLibrary = Antilatency.StorageClient.Library.load();
-        if (storageClientLibrary == null) {
-            throw new Exception("Failed to load AntilatencyStorageClient library");
-        }
+    private static Antilatency.Alt.Tracking.IEnvironment CreateEnvironment(
+            Antilatency.StorageClient.ILibrary storageClientLibrary,
+            Antilatency.Alt.Tracking.ILibrary trackingLibrary) {
 
         using var storage = storageClientLibrary.getLocalStorage();
-        environmentCode = storage.read("environment", "default");
-        placementCode = storage.read("placement", "default");
-    }
-
-    private Antilatency.Alt.Tracking.IEnvironment CreateEnvironment(
-                                                    string environmentCode) {
+        string environmentCode = storage.read("environment", "default");
 
         if (string.IsNullOrEmpty(environmentCode)) {
             throw new Exception("Cannot create environment");
         }
 
-        return _trackingLibrary.createEnvironment(environmentCode);
+        return trackingLibrary.createEnvironment(environmentCode);
     }
 
-    public Antilatency.Math.floatP3Q CreatePlacement(string placementCode) {
-        
+    private static Antilatency.Math.floatP3Q CreatePlacement(
+            Antilatency.StorageClient.ILibrary storageClientLibrary,
+            Antilatency.Alt.Tracking.ILibrary trackingLibrary) {
+
+        using var storage = storageClientLibrary.getLocalStorage();
+        string placementCode = storage.read("placement", "default");
+
         if (string.IsNullOrEmpty(placementCode)) {
             var identityPlacement = new Antilatency.Math.floatP3Q();
             identityPlacement.rotation.w = 1;
@@ -115,16 +104,12 @@ class AltTrackingExample {
             return identityPlacement;
         }
 
-        return _trackingLibrary.createPlacement(placementCode);
+        return trackingLibrary.createPlacement(placementCode);
     }
 
-    private Antilatency.Alt.Tracking.ITrackingCotask StartTrackingOnAnyNode(
-            Antilatency.DeviceNetwork.INetwork network,
-            Antilatency.Alt.Tracking.IEnvironment environment) {
-
-        using var trackingLibrary = Antilatency.Alt.Tracking.Library.load();
-
-        using var cotaskConstructor = trackingLibrary.createTrackingCotaskConstructor();
+    private static Antilatency.DeviceNetwork.NodeHandle WaitForCompatibleNode(
+            Antilatency.Alt.Tracking.ITrackingCotaskConstructor cotaskConstructor,
+            Antilatency.DeviceNetwork.INetwork network) {
 
         uint prevUpdateId = 0;
         while (true) {
@@ -143,20 +128,14 @@ class AltTrackingExample {
                         Antilatency.DeviceNetwork.NodeStatus.Idle);
 
             if (node != Antilatency.DeviceNetwork.NodeHandle.Null) {
-
-                string serialNo = network.nodeGetStringProperty(node,
-                    Antilatency.DeviceNetwork.Interop.Constants.HardwareSerialNumberKey);
-
-                Console.WriteLine($"Tracking is about to start on node {node}, s/n {serialNo}");
-
-                return cotaskConstructor.startTask(network, node, environment);
+                return node;
             }
 
             prevUpdateId = updateId;
         }
     }
 
-    private void PrintTrackingState(
+    private static void PrintTrackingState(
             Antilatency.Alt.Tracking.ITrackingCotask cotask,
             Antilatency.Math.floatP3Q placement) {
 
@@ -181,7 +160,7 @@ class AltTrackingExample {
         }
     }
 
-    private void PrintEnvironmentMarkers(
+    private static void PrintEnvironmentMarkers(
             Antilatency.Alt.Tracking.IEnvironment environment) {
 
         var markers = environment.getMarkers();
@@ -195,7 +174,7 @@ class AltTrackingExample {
         Console.WriteLine();
     }
 
-    private void PrintPlacementInfo(Antilatency.Math.floatP3Q placement) {
+    private static void PrintPlacementInfo(Antilatency.Math.floatP3Q placement) {
         Console.WriteLine("Placement:");
         Console.WriteLine("    offset: {0:G5} {1:G5} {2:G5}",
             placement.position.x,
