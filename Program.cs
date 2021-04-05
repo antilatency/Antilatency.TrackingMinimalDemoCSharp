@@ -143,9 +143,12 @@ class Program {
 
             var state = cotask.getExtrapolatedState(placement, 0.06f);
 
+            if (state.stability.stage == Antilatency.Alt.Tracking.Stage.InertialDataInitialization)
+                continue;
+
             Console.WriteLine(
-                "{0,-26} : {1,-12:G5} {2,-12:G5} {3,-12:G5} : " +
-                "{4,-12:G5} {5,-12:G5} {6,-12:G5} {7:G5}",
+                "{0,-12} : {1,-11:G5} {2,-11:G5} {3,-11:G5} : " +
+                "{4,-11:G4} {5,-11:G5} {6,-11:G5} {7:G5}",
                 state.stability.stage,
                 state.pose.position.x,
                 state.pose.position.y,
