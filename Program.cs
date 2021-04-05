@@ -30,7 +30,9 @@ class Program {
         using var trackingLibrary = Antilatency.Alt.Tracking.Library.load();
         using var network = CreateNetwork();
 
+        #region CreateTrackingCotaskConstructor
         using var cotaskConstructor = trackingLibrary.createTrackingCotaskConstructor();
+        #endregion
 
         using var environment = CreateEnvironment(storageClientLibrary, trackingLibrary);
         var placement = CreatePlacement(storageClientLibrary, trackingLibrary);
@@ -49,7 +51,10 @@ class Program {
 
             Console.WriteLine($"Tracking is about to start on node {node}, s/n {serialNo}");
 
+            #region StartTrackingTask
             using var cotask = cotaskConstructor.startTask(network, node, environment);
+            #endregion
+
             PrintTrackingState(cotask, placement);
         }
     }
