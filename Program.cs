@@ -27,6 +27,7 @@ class Program {
     static void Main() {
 
         using var storageClientLibrary = Antilatency.StorageClient.Library.load();
+        using var environmentSelectorLibrary = Antilatency.Alt.Environment.Selector.Library.load();
         using var trackingLibrary = Antilatency.Alt.Tracking.Library.load();
         using var network = CreateNetwork();
 
@@ -34,7 +35,7 @@ class Program {
         using var cotaskConstructor = trackingLibrary.createTrackingCotaskConstructor();
         #endregion
 
-        using var environment = CreateEnvironment(storageClientLibrary, trackingLibrary);
+        using var environment = CreateEnvironment(storageClientLibrary, environmentSelectorLibrary);
         var placement = CreatePlacement(storageClientLibrary, trackingLibrary);
 
         Console.WriteLine("----- Settings -----");
@@ -70,19 +71,15 @@ class Program {
 
         adnLibrary.setLogLevel(Antilatency.DeviceNetwork.LogLevel.Info);
 
-        return adnLibrary.createNetwork(
-            new[] {
-                new Antilatency.DeviceNetwork.UsbDeviceType {
-                    vid = Antilatency.DeviceNetwork.UsbVendorId.Antilatency,
-                    pid = 0x0000
-                }
-            }
-        );
+        using var filter = adnLibrary.createFilter();
+        filter.addUsbDevice(Antilatency.DeviceNetwork.Constants.AllUsbDevices);
+
+        return adnLibrary.createNetwork(filter);
     }
 
-    private static Antilatency.Alt.Tracking.IEnvironment CreateEnvironment(
+    private static Antilatency.Alt.Environment.IEnvironment CreateEnvironment(
             Antilatency.StorageClient.ILibrary storageClientLibrary,
-            Antilatency.Alt.Tracking.ILibrary trackingLibrary) {
+            Antilatency.Alt.Environment.Selector.ILibrary environmentSelectorLibrary) {
 
         using var storage = storageClientLibrary.getLocalStorage();
         string environmentCode = storage.read("environment", "default");
@@ -91,7 +88,7 @@ class Program {
             throw new Exception("Cannot create environment");
         }
 
-        return trackingLibrary.createEnvironment(environmentCode);
+        return environmentSelectorLibrary.createEnvironment(environmentCode);
     }
 
     private static Antilatency.Math.floatP3Q CreatePlacement(
@@ -171,7 +168,7 @@ class Program {
     }
 
     private static void PrintEnvironmentMarkers(
-            Antilatency.Alt.Tracking.IEnvironment environment) {
+            Antilatency.Alt.Environment.IEnvironment environment) {
 
         var markers = environment.getMarkers();
 
