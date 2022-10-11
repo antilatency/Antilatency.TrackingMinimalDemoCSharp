@@ -10,7 +10,7 @@
     <Compile Remove="AntilatencySdk\**" />
     <None Remove="AntilatencySdk\**" />
     <AntilatencySdkApiFiles Include="AntilatencySdk\Api\*.cs" />
-    <AntilatencySdkDlls Include="AntilatencySdk\Bin\Windows\x64\*.dll" />
+    <AntilatencySdkDlls Include="AntilatencySdk\Bin\WindowsDesktop\x64\*.dll" />
   </ItemGroup>
 
   <ItemGroup>
