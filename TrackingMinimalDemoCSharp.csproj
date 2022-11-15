@@ -11,6 +11,7 @@
     <None Remove="AntilatencySdk\**" />
     <AntilatencySdkApiFiles Include="AntilatencySdk\Api\*.cs" />
     <AntilatencySdkDlls Include="AntilatencySdk\Bin\WindowsDesktop\x64\*.dll" />
+	<AntilatencySdkDlls Include="AntilatencySdk\Bin\Linux\x86_64\*.so" />
   </ItemGroup>
 
   <ItemGroup>
