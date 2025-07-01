@@ -1,4 +1,4 @@
 [submodule "AntilatencySdk"]
 	path = AntilatencySdk
-	url = https://github.com/AntilatencySDK/Release_4.0.0.git
-	branch = subset-5ab74a184217eab44bbfdb35b4132659c534f440
+	url = https://github.com/AntilatencySDK/Release_4.5.0.git
+	branch = subset-4be0ee834552cde534952b73abe998b0260c0863
